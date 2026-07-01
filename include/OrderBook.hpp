@@ -73,13 +73,29 @@ class OrderBook {
             orderIndex.erase(id);
         }
 
-        void modifyOrder(OrderID id, Order order) {
-            cancelOrder(id);
-            addOrder(order);
+        void modifyOrder(OrderID id, Price price, uint32_t quantity) {
+            auto it = orderIndex.find(id);
+
+            if (it == orderIndex.end()) {
+                return;
+            }
+
+            Order& order = *(it -> second.it);
+
+            if (order.price == price) {
+                order.quantity = quantity;
+            } else {
+                Order updated = order; 
+                updated.price = price;
+                updated.quantity = quantity; 
+
+                cancelOrder(id);
+                addOrder(updated);
+            }
         }
 
         void match(Order& incomingOrder) {
-
+            
         }
 
         Price bestBid() const {
