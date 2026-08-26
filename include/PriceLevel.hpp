@@ -1,10 +1,11 @@
+#pragma once
 #include <iostream>
 #include <list>
-#include <Order.hpp>
-
+#include "Order.hpp"
+#include "Types.hpp"
 
 struct PriceLevel {
     std::list<Order> orders; 
-    double price;
+    Price price;
 };
 

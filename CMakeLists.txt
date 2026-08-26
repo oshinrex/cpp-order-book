@@ -11,4 +11,5 @@ include_directories(include)
 
 add_executable(orderbook
     src/main.cpp
+    src/OrderBook.cpp
 )
