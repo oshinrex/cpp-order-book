@@ -85,9 +85,10 @@ void OrderBook::modifyOrder(OrderID id, Price price, uint32_t quantity) {
 
 std::vector<Trade> OrderBook::match(Order& incomingOrder) {
     std::vector<Trade> trades;
+    const uint64_t timestamp = incomingOrder.timestamp;
 
     if (incomingOrder.side == Side::buy) {
-        while (incomingOrder.quantity > 0 && !asks.empty() && asks.begin()->first <= incomingOrder.price) {
+        while (incomingOrder.quantity > 0 && !asks.empty() && (incomingOrder.order_type == OrderType::market || asks.begin()->first <= incomingOrder.price)) {
             auto& bestLevel = asks.begin()->second;
             auto restingIt = bestLevel.orders.begin();
             Order& restingOrder = *restingIt;
@@ -99,10 +100,7 @@ std::vector<Trade> OrderBook::match(Order& incomingOrder) {
             // Capture what we need before any erase invalidates restingOrder.
             OrderID restingId = restingOrder.id;
             Price restingPrice = restingOrder.price;
-            uint64_t timestamp = static_cast<uint64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count());
-
+        
             if (restingOrder.quantity == 0) {
                 orderIndex.erase(restingId);
                 bestLevel.orders.erase(restingIt);
@@ -115,13 +113,13 @@ std::vector<Trade> OrderBook::match(Order& incomingOrder) {
             trades.push_back(Trade{incomingOrder.id, restingId, restingPrice, traded, timestamp});
         }
 
-        if (incomingOrder.quantity != 0) {
+        if (incomingOrder.quantity != 0 && incomingOrder.order_type == OrderType::limit) {
             addOrder(incomingOrder);
         }
         return trades;
 
     } else {
-        while (incomingOrder.quantity > 0 && !bids.empty() && bids.begin()->first >= incomingOrder.price) {
+        while (incomingOrder.quantity > 0 && !bids.empty() && (incomingOrder.order_type == OrderType::market || bids.begin()->first >= incomingOrder.price)) {
             auto& bestLevel = bids.begin()->second;
             auto restingIt = bestLevel.orders.begin();
             Order& restingOrder = *restingIt;
@@ -132,10 +130,7 @@ std::vector<Trade> OrderBook::match(Order& incomingOrder) {
 
             OrderID restingId = restingOrder.id;
             Price restingPrice = restingOrder.price;
-            uint64_t timestamp = static_cast<uint64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count());
-
+            
             if (restingOrder.quantity == 0) {
                 orderIndex.erase(restingId);
                 bestLevel.orders.erase(restingIt);
@@ -149,7 +144,7 @@ std::vector<Trade> OrderBook::match(Order& incomingOrder) {
             trades.push_back(Trade{restingId, incomingOrder.id, restingPrice, traded, timestamp});
         }
 
-        if (incomingOrder.quantity != 0) {
+        if (incomingOrder.quantity != 0 && incomingOrder.order_type == OrderType::limit) {
             addOrder(incomingOrder);
         }
         return trades;
