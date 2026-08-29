@@ -13,3 +13,8 @@ add_executable(orderbook
     src/main.cpp
     src/OrderBook.cpp
 )
+
+add_executable(orderbook_bench
+    bench/benchmark.cpp
+    src/OrderBook.cpp
+)
