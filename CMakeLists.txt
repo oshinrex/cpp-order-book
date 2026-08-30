@@ -18,3 +18,13 @@ add_executable(orderbook_bench
     bench/benchmark.cpp
     src/OrderBook.cpp
 )
+
+add_executable(orderbook_bench_mixed
+    bench/mixed_benchmark.cpp
+    src/OrderBook.cpp
+)
+
+add_executable(orderbook_bench_cancel_baseline
+    bench/cancel_baseline_benchmark.cpp
+    src/OrderBook.cpp
+)
