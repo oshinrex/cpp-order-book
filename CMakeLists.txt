@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(LowLatencyOrderBook LANGUAGES CXX)
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -26,5 +30,10 @@ add_executable(orderbook_bench_mixed
 
 add_executable(orderbook_bench_cancel_baseline
     bench/cancel_baseline_benchmark.cpp
+    src/OrderBook.cpp
+)
+
+add_executable(allocation_benchmark
+    bench/allocation_benchmark.cpp
     src/OrderBook.cpp
 )

@@ -2,19 +2,19 @@
 
 #include <cstdint>
 #include <functional>
-#include <list>
 #include <map>
 #include <unordered_map>
 #include <vector>
 
 #include "Order.hpp"
+#include "OrderNodePool.hpp"
 #include "PriceLevel.hpp"
 #include "Trade.hpp"
 
 #include "Types.hpp"
 
 struct OrderRef {
-    std::list<Order>::iterator it;
+    OrderNode* node;
     bool isBuy;
     Price price;
 };
@@ -60,4 +60,11 @@ private:
     // Maps order IDs to their location for O(1) cancel/modify
     std::unordered_map<OrderID, OrderRef> orderIndex;
 
+    // Preallocated storage for resting orders, replacing per-order heap
+    // allocation. Sized close to the observed peak resting-order count
+    // (~212K in benchmarks), not the total orders processed - an
+    // oversized pool costs more in page-fault-driven first-touch latency
+    // than it saves in allocation count. Falls back to individual heap
+    // allocation past this capacity.
+    OrderNodePool nodePool_{300'000};
 };

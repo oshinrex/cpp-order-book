@@ -2,29 +2,46 @@
 #include "../include/Trade.hpp"
 #include <iostream>
 #include <algorithm>
-#include <chrono>
 
 bool OrderBook::addOrder(const Order& order) {
     auto it = orderIndex.find(order.id);
     if (it == orderIndex.end()) {
-    
+
         if (order.side == Side::buy) {
             auto& level = bids[order.price];
             level.price = order.price;
 
-            level.orders.push_back(order);
-            auto it = std::prev(level.orders.end());
+            OrderNode* node = nodePool_.acquire();
+            node->data = order;
+            node->prev = level.tail;
+            node->next = nullptr;
 
-            orderIndex[order.id] = OrderRef{it, true, order.price};
+            if (level.tail == nullptr) {
+                level.head = node;
+            } else {
+                level.tail->next = node;
+            }
+            level.tail = node;
+
+            orderIndex[order.id] = OrderRef{node, true, order.price};
 
         } else {
             auto& level = asks[order.price];
             level.price = order.price;
 
-            level.orders.push_back(order);
-            auto it = std::prev(level.orders.end());
+            OrderNode* node = nodePool_.acquire();
+            node->data = order;
+            node->prev = level.tail;
+            node->next = nullptr;
 
-            orderIndex[order.id] = OrderRef{it, false, order.price};
+            if (level.tail == nullptr) {
+                level.head = node;
+            } else {
+                level.tail->next = node;
+            }
+            level.tail = node;
+
+            orderIndex[order.id] = OrderRef{node, false, order.price};
         }
         return true;
     }
@@ -38,17 +55,31 @@ void OrderBook::cancelOrder(OrderID id) {
         std::cerr << "This order was never placed\n";
         return;
     }
-    
+
     OrderRef& o = it->second;
+    OrderNode* node = o.node;
+
+    if (node->prev) node->prev->next = node->next;
+    if (node->next) node->next->prev = node->prev;
 
     if (o.isBuy) {
-        bids[o.price].orders.erase(o.it);
-        if (bids[o.price].orders.empty()) {
+        PriceLevel& level = bids[o.price];
+        if (level.head == node) level.head = node->next;
+        if (level.tail == node) level.tail = node->prev;
+
+        nodePool_.release(node);
+
+        if (level.head == nullptr) {
             bids.erase(o.price);
         }
     } else {
-        asks[o.price].orders.erase(o.it);
-        if (asks[o.price].orders.empty()) {
+        PriceLevel& level = asks[o.price];
+        if (level.head == node) level.head = node->next;
+        if (level.tail == node) level.tail = node->prev;
+
+        nodePool_.release(node);
+
+        if (level.head == nullptr) {
             asks.erase(o.price);
         }
     }
@@ -63,11 +94,11 @@ void OrderBook::modifyOrder(OrderID id, Price price, uint32_t quantity) {
         return;
     }
 
-    Order updated = *(it -> second.it);
+    Order updated = it->second.node->data;
 
     if (updated.price == price) {
         if (quantity <= updated.quantity) {
-            it->second.it->quantity = quantity;
+            it->second.node->data.quantity = quantity;
             return;
         }
         updated.quantity = quantity;
@@ -88,25 +119,33 @@ std::vector<Trade> OrderBook::match(Order& incomingOrder) {
     const uint64_t timestamp = incomingOrder.timestamp;
 
     if (incomingOrder.side == Side::buy) {
-        while (incomingOrder.quantity > 0 && !asks.empty() && (incomingOrder.order_type == OrderType::market || asks.begin()->first <= incomingOrder.price)) {
+        while (incomingOrder.quantity > 0 && !asks.empty() &&
+       (incomingOrder.order_type == OrderType::market || asks.begin()->first <= incomingOrder.price)) {
             auto& bestLevel = asks.begin()->second;
-            auto restingIt = bestLevel.orders.begin();
-            Order& restingOrder = *restingIt;
+            OrderNode* restingNode = bestLevel.head;
+            Order& restingOrder = restingNode->data;
 
             uint32_t traded = std::min(incomingOrder.quantity, restingOrder.quantity);
             incomingOrder.quantity -= traded;
             restingOrder.quantity -= traded;
 
-            // Capture what we need before any erase invalidates restingOrder.
+            // Capture what we need before any release invalidates restingOrder.
             OrderID restingId = restingOrder.id;
             Price restingPrice = restingOrder.price;
-        
+
             if (restingOrder.quantity == 0) {
                 orderIndex.erase(restingId);
-                bestLevel.orders.erase(restingIt);
+
+                bestLevel.head = restingNode->next;
+                if (bestLevel.head) {
+                    bestLevel.head->prev = nullptr;
+                } else {
+                    bestLevel.tail = nullptr;
+                }
+                nodePool_.release(restingNode);
             }
 
-            if (bestLevel.orders.empty()) {
+            if (bestLevel.head == nullptr) {
                 asks.erase(asks.begin());
             }
 
@@ -119,10 +158,11 @@ std::vector<Trade> OrderBook::match(Order& incomingOrder) {
         return trades;
 
     } else {
-        while (incomingOrder.quantity > 0 && !bids.empty() && (incomingOrder.order_type == OrderType::market || bids.begin()->first >= incomingOrder.price)) {
+        while (incomingOrder.quantity > 0 && !bids.empty() &&
+       (incomingOrder.order_type == OrderType::market || bids.begin()->first >= incomingOrder.price)) {
             auto& bestLevel = bids.begin()->second;
-            auto restingIt = bestLevel.orders.begin();
-            Order& restingOrder = *restingIt;
+            OrderNode* restingNode = bestLevel.head;
+            Order& restingOrder = restingNode->data;
 
             uint32_t traded = std::min(incomingOrder.quantity, restingOrder.quantity);
             incomingOrder.quantity -= traded;
@@ -130,13 +170,20 @@ std::vector<Trade> OrderBook::match(Order& incomingOrder) {
 
             OrderID restingId = restingOrder.id;
             Price restingPrice = restingOrder.price;
-            
+
             if (restingOrder.quantity == 0) {
                 orderIndex.erase(restingId);
-                bestLevel.orders.erase(restingIt);
+
+                bestLevel.head = restingNode->next;
+                if (bestLevel.head) {
+                    bestLevel.head->prev = nullptr;
+                } else {
+                    bestLevel.tail = nullptr;
+                }
+                nodePool_.release(restingNode);
             }
 
-            if (bestLevel.orders.empty()) {
+            if (bestLevel.head == nullptr) {
                 bids.erase(bids.begin());
             }
 
@@ -172,8 +219,8 @@ void OrderBook::printBook() const {
     for (const auto& [price, level] : bids) {
         std::cout << "Price: " << price << ", Quantity: ";
         uint32_t totalQuantity = 0;
-        for (const auto& order : level.orders) {
-            totalQuantity += order.quantity;
+        for (OrderNode* n = level.head; n != nullptr; n = n->next) {
+            totalQuantity += n->data.quantity;
         }
         std::cout << totalQuantity << "\n";
     }
@@ -182,8 +229,8 @@ void OrderBook::printBook() const {
     for (const auto& [price, level] : asks) {
         std::cout << "Price: " << price << ", Quantity: ";
         uint32_t totalQuantity = 0;
-        for (const auto& order : level.orders) {
-            totalQuantity += order.quantity;    
+        for (OrderNode* n = level.head; n != nullptr; n = n->next) {
+            totalQuantity += n->data.quantity;
         }
         std::cout << totalQuantity << "\n";
     }
