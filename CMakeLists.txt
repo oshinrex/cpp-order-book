@@ -33,7 +33,7 @@ add_executable(orderbook_bench_cancel_baseline
     src/OrderBook.cpp
 )
 
-add_executable(allocation_benchmark
+add_executable(orderbook_bench_allocations
     bench/allocation_benchmark.cpp
     src/OrderBook.cpp
 )
